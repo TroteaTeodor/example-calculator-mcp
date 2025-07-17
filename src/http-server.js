@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import {
   CallToolRequestSchema,
   ErrorCode,
@@ -14,13 +13,10 @@ import cors from "cors";
 class CalculatorHTTPServer {
   constructor() {
     this.app = express();
-    this.port = process.env.PORT || 8000;
-    this.host = process.env.HOST || '0.0.0.0';
-    
     this.server = new Server(
       {
         name: "example-calculator-mcp",
-        version: "1.0.0",
+        version: "0.1.0",
       },
       {
         capabilities: {
@@ -29,286 +25,228 @@ class CalculatorHTTPServer {
       }
     );
 
+    this.host = process.env.HOST || "0.0.0.0";
+    this.port = parseInt(process.env.PORT || "3000");
+
     this.setupExpress();
-    this.setupToolHandlers();
-    this.setupErrorHandling();
+    this.setupTools();
   }
 
   setupExpress() {
+    // Enable CORS for all origins
     this.app.use(cors());
-    this.app.use(express.json());
-
-    // Health check endpoint
-    this.app.get('/health', (req, res) => {
-      res.json({ 
-        status: 'healthy', 
-        server: 'example-calculator-mcp',
-        version: '1.0.0',
-        timestamp: new Date().toISOString()
-      });
-    });
-
-    // Root endpoint
-    this.app.get('/', (req, res) => {
-      res.json({
-        name: 'Example Calculator MCP Server',
-        version: '1.0.0',
-        description: 'A simple MCP server with basic calculator tools',
-        endpoints: {
-          health: '/health',
-          sse: '/sse'
-        },
-        tools: ['add', 'subtract', 'multiply', 'divide', 'power', 'sqrt']
-      });
-    });
-  }
-
-  setupErrorHandling() {
-    this.server.onerror = (error) => console.error("[MCP Error]", error);
     
-    process.on("SIGINT", async () => {
-      console.log("\nShutting down calculator MCP server...");
-      await this.server.close();
-      process.exit(0);
+    // Parse JSON bodies
+    this.app.use(express.json());
+    
+    // Health check endpoint
+    this.app.get("/health", (req, res) => {
+      res.json({ status: "healthy", timestamp: new Date().toISOString() });
+    });
+
+    // Simple MCP endpoint (not using SSE for now)
+    this.app.post("/mcp", async (req, res) => {
+      try {
+        const result = await this.handleMCPRequest(req.body);
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
     });
   }
 
-  setupToolHandlers() {
+  async handleMCPRequest(request) {
+    // Simple MCP request handling
+    if (request.method === "tools/list") {
+      return {
+        tools: [
+          {
+            name: "add",
+            description: "Add two numbers",
+            inputSchema: {
+              type: "object",
+              properties: {
+                a: { type: "number", description: "First number" },
+                b: { type: "number", description: "Second number" }
+              },
+              required: ["a", "b"]
+            }
+          },
+          {
+            name: "subtract", 
+            description: "Subtract two numbers",
+            inputSchema: {
+              type: "object",
+              properties: {
+                a: { type: "number", description: "First number" },
+                b: { type: "number", description: "Second number" }
+              },
+              required: ["a", "b"]
+            }
+          },
+          {
+            name: "multiply",
+            description: "Multiply two numbers", 
+            inputSchema: {
+              type: "object",
+              properties: {
+                a: { type: "number", description: "First number" },
+                b: { type: "number", description: "Second number" }
+              },
+              required: ["a", "b"]
+            }
+          },
+          {
+            name: "divide",
+            description: "Divide two numbers",
+            inputSchema: {
+              type: "object",
+              properties: {
+                a: { type: "number", description: "First number" },
+                b: { type: "number", description: "Second number" }
+              },
+              required: ["a", "b"]
+            }
+          },
+          {
+            name: "power",
+            description: "Raise a number to a power",
+            inputSchema: {
+              type: "object", 
+              properties: {
+                base: { type: "number", description: "Base number" },
+                exponent: { type: "number", description: "Exponent" }
+              },
+              required: ["base", "exponent"]
+            }
+          },
+          {
+            name: "sqrt",
+            description: "Calculate square root",
+            inputSchema: {
+              type: "object",
+              properties: {
+                number: { type: "number", description: "Number to calculate square root of" }
+              },
+              required: ["number"]
+            }
+          }
+        ]
+      };
+    } else if (request.method === "tools/call") {
+      return await this.callTool(request.params.name, request.params.arguments);
+    } else {
+      throw new Error(`Unknown method: ${request.method}`);
+    }
+  }
+
+  async callTool(name, args) {
+    switch (name) {
+      case "add":
+        return {
+          content: [
+            {
+              type: "text",
+              text: `${args.a} + ${args.b} = ${args.a + args.b}`
+            }
+          ]
+        };
+
+      case "subtract":
+        return {
+          content: [
+            {
+              type: "text", 
+              text: `${args.a} - ${args.b} = ${args.a - args.b}`
+            }
+          ]
+        };
+
+      case "multiply":
+        return {
+          content: [
+            {
+              type: "text",
+              text: `${args.a} × ${args.b} = ${args.a * args.b}`
+            }
+          ]
+        };
+
+      case "divide":
+        if (args.b === 0) {
+          throw new Error("Division by zero is not allowed");
+        }
+        return {
+          content: [
+            {
+              type: "text",
+              text: `${args.a} ÷ ${args.b} = ${args.a / args.b}`
+            }
+          ]
+        };
+
+      case "power":
+        return {
+          content: [
+            {
+              type: "text",
+              text: `${args.base}^${args.exponent} = ${Math.pow(args.base, args.exponent)}`
+            }
+          ]
+        };
+
+      case "sqrt":
+        if (args.number < 0) {
+          throw new Error("Cannot calculate square root of negative number");
+        }
+        return {
+          content: [
+            {
+              type: "text",
+              text: `√${args.number} = ${Math.sqrt(args.number)}`
+            }
+          ]
+        };
+
+      default:
+        throw new Error(`Unknown tool: ${name}`);
+    }
+  }
+
+  setupTools() {
+    // Set up the MCP tools (keeping for potential future use)
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
       return {
         tools: [
           {
             name: "add",
-            description: "Add two numbers together",
+            description: "Add two numbers",
             inputSchema: {
               type: "object",
               properties: {
-                a: {
-                  type: "number",
-                  description: "First number",
-                },
-                b: {
-                  type: "number", 
-                  description: "Second number",
-                },
+                a: { type: "number", description: "First number" },
+                b: { type: "number", description: "Second number" }
               },
-              required: ["a", "b"],
-            },
+              required: ["a", "b"]
+            }
           },
-          {
-            name: "subtract",
-            description: "Subtract second number from first number",
-            inputSchema: {
-              type: "object",
-              properties: {
-                a: {
-                  type: "number",
-                  description: "Number to subtract from",
-                },
-                b: {
-                  type: "number",
-                  description: "Number to subtract",
-                },
-              },
-              required: ["a", "b"],
-            },
-          },
-          {
-            name: "multiply",
-            description: "Multiply two numbers",
-            inputSchema: {
-              type: "object",
-              properties: {
-                a: {
-                  type: "number",
-                  description: "First number",
-                },
-                b: {
-                  type: "number",
-                  description: "Second number",
-                },
-              },
-              required: ["a", "b"],
-            },
-          },
-          {
-            name: "divide",
-            description: "Divide first number by second number",
-            inputSchema: {
-              type: "object",
-              properties: {
-                a: {
-                  type: "number",
-                  description: "Dividend",
-                },
-                b: {
-                  type: "number",
-                  description: "Divisor",
-                },
-              },
-              required: ["a", "b"],
-            },
-          },
-          {
-            name: "power",
-            description: "Raise first number to the power of second number",
-            inputSchema: {
-              type: "object",
-              properties: {
-                base: {
-                  type: "number",
-                  description: "Base number",
-                },
-                exponent: {
-                  type: "number",
-                  description: "Exponent",
-                },
-              },
-              required: ["base", "exponent"],
-            },
-          },
-          {
-            name: "sqrt",
-            description: "Calculate square root of a number",
-            inputSchema: {
-              type: "object",
-              properties: {
-                number: {
-                  type: "number",
-                  description: "Number to find square root of",
-                  minimum: 0,
-                },
-              },
-              required: ["number"],
-            },
-          },
-        ],
+          // ... other tools would be here
+        ]
       };
     });
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
-
-      try {
-        switch (name) {
-          case "add": {
-            const { a, b } = args;
-            const result = a + b;
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `${a} + ${b} = ${result}`,
-                },
-              ],
-            };
-          }
-
-          case "subtract": {
-            const { a, b } = args;
-            const result = a - b;
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `${a} - ${b} = ${result}`,
-                },
-              ],
-            };
-          }
-
-          case "multiply": {
-            const { a, b } = args;
-            const result = a * b;
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `${a} × ${b} = ${result}`,
-                },
-              ],
-            };
-          }
-
-          case "divide": {
-            const { a, b } = args;
-            if (b === 0) {
-              throw new McpError(
-                ErrorCode.InvalidRequest,
-                "Cannot divide by zero"
-              );
-            }
-            const result = a / b;
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `${a} ÷ ${b} = ${result}`,
-                },
-              ],
-            };
-          }
-
-          case "power": {
-            const { base, exponent } = args;
-            const result = Math.pow(base, exponent);
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `${base}^${exponent} = ${result}`,
-                },
-              ],
-            };
-          }
-
-          case "sqrt": {
-            const { number } = args;
-            if (number < 0) {
-              throw new McpError(
-                ErrorCode.InvalidRequest,
-                "Cannot calculate square root of negative number"
-              );
-            }
-            const result = Math.sqrt(number);
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `√${number} = ${result}`,
-                },
-              ],
-            };
-          }
-
-          default:
-            throw new McpError(
-              ErrorCode.MethodNotFound,
-              `Unknown tool: ${name}`
-            );
-        }
-      } catch (error) {
-        if (error instanceof McpError) {
-          throw error;
-        }
-        throw new McpError(
-          ErrorCode.InternalError,
-          `Calculator error: ${error.message}`
-        );
-      }
+      return await this.callTool(name, args);
     });
   }
 
   async run() {
-    // Setup SSE transport
-    const transport = new SSEServerTransport("/sse", this.app);
-    await this.server.connect(transport);
-
-    // Start HTTP server
+    // Start HTTP server without SSE transport for now
     this.app.listen(this.port, this.host, () => {
       console.log(`Calculator MCP server running on http://${this.host}:${this.port}`);
-      console.log(`SSE endpoint: http://${this.host}:${this.port}/sse`);
       console.log(`Health check: http://${this.host}:${this.port}/health`);
+      console.log(`MCP endpoint: http://${this.host}:${this.port}/mcp`);
     });
   }
 }
