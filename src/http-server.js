@@ -47,13 +47,31 @@ class CalculatorHTTPServer {
 
     // SSE endpoint that returns tools in the format kagent expects
     this.app.get("/sse", async (req, res) => {
-      try {
-        // Return tools in a format that might work for discovery
-        const result = await this.handleMCPRequest({ method: "tools/list" });
-        res.json(result);
-      } catch (error) {
-        res.status(500).json({ error: error.message });
-      }
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive"
+      });
+
+      // Send initialized event
+      res.write("data: " + JSON.stringify({
+        jsonrpc: "2.0",
+        method: "notifications/initialized",
+        params: {}
+      }) + "\n\n");
+
+      // Send tools list event
+      const result = await this.handleMCPRequest({ method: "tools/list" });
+      res.write("data: " + JSON.stringify({
+        jsonrpc: "2.0",
+        method: "tools/list",
+        params: result
+      }) + "\n\n");
+
+      // Keep the connection open (SSE spec)
+      req.on("close", () => {
+        res.end();
+      });
     });
 
     // POST SSE endpoint
