@@ -36,45 +36,63 @@ class CalculatorHTTPServer {
   setupExpress() {
     // Enable CORS for all origins
     this.app.use(cors());
-    
+
     // Parse JSON bodies
     this.app.use(express.json());
-    
+
     // Health check endpoint
     this.app.get("/health", (req, res) => {
       res.json({ status: "healthy", timestamp: new Date().toISOString() });
     });
 
-    // SSE endpoint that returns tools in the format kagent expects
-    this.app.get("/sse", async (req, res) => {
-      res.writeHead(200, {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive"
-      });
-
-      // Send initialized event
-      res.write("data: " + JSON.stringify({
-        jsonrpc: "2.0",
-        method: "notifications/initialized",
-        params: {}
-      }) + "\n\n");
-
-      // Send tools list event
-      const result = await this.handleMCPRequest({ method: "tools/list" });
-      res.write("data: " + JSON.stringify({
-        jsonrpc: "2.0",
-        method: "tools/list",
-        params: result
-      }) + "\n\n");
-
-      // Keep the connection open (SSE spec)
-      req.on("close", () => {
-        res.end();
+    // Root endpoint
+    this.app.get("/", (req, res) => {
+      res.json({
+        name: "example-calculator-mcp",
+        type: "mcp-server",
+        version: "0.1.0",
+        endpoints: ["/sse", "/health"]
       });
     });
 
-    // POST SSE endpoint
+    // SSE endpoint that implements proper MCP protocol
+    this.app.get("/sse", async (req, res) => {
+      try {
+        // Set SSE headers
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Headers": "Cache-Control"
+        });
+
+        // Send initial connection message (MCP protocol)
+        res.write("data: " + JSON.stringify({
+          jsonrpc: "2.0",
+          method: "notifications/initialized",
+          params: {}
+        }) + "\n\n");
+
+        // Send tools list (MCP protocol)
+        const tools = await this.handleMCPRequest({ method: "tools/list" });
+        res.write("data: " + JSON.stringify({
+          jsonrpc: "2.0",
+          method: "tools/list",
+          params: tools
+        }) + "\n\n");
+
+        // Keep the connection open (SSE spec)
+        req.on("close", () => {
+          res.end();
+        });
+      } catch (error) {
+        console.error("SSE error:", error);
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // POST SSE endpoint for MCP requests
     this.app.post("/sse", async (req, res) => {
       try {
         const result = await this.handleMCPRequest(req.body);
@@ -108,7 +126,7 @@ class CalculatorHTTPServer {
 
   setupErrorHandling() {
     this.server.onerror = (error) => console.error("[MCP Error]", error);
-    
+
     process.on("SIGINT", async () => {
       console.log("\nShutting down calculator MCP server...");
       process.exit(0);
@@ -133,7 +151,7 @@ class CalculatorHTTPServer {
             }
           },
           {
-            name: "subtract", 
+            name: "subtract",
             description: "Subtract two numbers",
             inputSchema: {
               type: "object",
@@ -146,7 +164,7 @@ class CalculatorHTTPServer {
           },
           {
             name: "multiply",
-            description: "Multiply two numbers", 
+            description: "Multiply two numbers",
             inputSchema: {
               type: "object",
               properties: {
@@ -172,7 +190,7 @@ class CalculatorHTTPServer {
             name: "power",
             description: "Raise a number to a power",
             inputSchema: {
-              type: "object", 
+              type: "object",
               properties: {
                 base: { type: "number", description: "Base number" },
                 exponent: { type: "number", description: "Exponent" }
@@ -216,7 +234,7 @@ class CalculatorHTTPServer {
         return {
           content: [
             {
-              type: "text", 
+              type: "text",
               text: `${args.a} - ${args.b} = ${args.a - args.b}`
             }
           ]
