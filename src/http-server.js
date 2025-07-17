@@ -45,6 +45,23 @@ class CalculatorHTTPServer {
       res.json({ status: "healthy", timestamp: new Date().toISOString() });
     });
 
+    // Status endpoint for kagent debugging
+    this.app.get("/status", async (req, res) => {
+      try {
+        const tools = await this.handleMCPRequest({ method: "tools/list" });
+        res.json({
+          status: "ok",
+          tools: tools.tools,
+          server: {
+            name: "example-calculator-mcp",
+            version: "0.1.0"
+          }
+        });
+      } catch (error) {
+        res.status(500).json({ status: "error", error: error.message });
+      }
+    });
+
     // Root endpoint
     this.app.get("/", (req, res) => {
       res.json({
@@ -79,11 +96,15 @@ class CalculatorHTTPServer {
         res.write("data: " + JSON.stringify({
           jsonrpc: "2.0",
           method: "tools/list",
-          params: tools
+          params: { tools: tools.tools }
         }) + "\n\n");
 
         // Keep the connection open (SSE spec)
+        const keepAlive = setInterval(() => {
+          res.write(": keep-alive\n\n");
+        }, 15000);
         req.on("close", () => {
+          clearInterval(keepAlive);
           res.end();
         });
       } catch (error) {
