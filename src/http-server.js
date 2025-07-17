@@ -53,6 +53,17 @@ class CalculatorHTTPServer {
         res.status(500).json({ error: error.message });
       }
     });
+
+    // Support GET requests for tool discovery
+    this.app.get("/mcp", async (req, res) => {
+      try {
+        // Return tools list for GET requests (for discovery)
+        const result = await this.handleMCPRequest({ method: "tools/list" });
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
   }
 
   async handleMCPRequest(request) {
